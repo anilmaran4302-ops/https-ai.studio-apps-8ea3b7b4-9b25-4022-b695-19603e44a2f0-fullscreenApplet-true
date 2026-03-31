@@ -1,0 +1,21 @@
+{
+  "name": "Tathastu Travels",
+  "short_name": "Tathastu",
+  "description": "Premium taxi service based in Bhopal, offering all-India outstation trips and airport transfers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#FF6321",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/tathastu/192/192",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://picsum.photos/seed/tathastu/512/512",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
