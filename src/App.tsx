@@ -59,6 +59,33 @@ const MapUpdater = ({ center }: { center: [number, number] }) => {
   return null;
 };
 
+const CollapsibleSection = ({ title, children, className, contentClassName }: { title: string, children: React.ReactNode, className?: string, contentClassName?: string }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <div className={cn("bg-white rounded-2xl border border-slate-200 overflow-hidden", className)}>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-6 font-bold text-brand-dark"
+      >
+        {title}
+        <ChevronRight className={cn("transition-transform", isOpen ? "rotate-90" : "")} />
+      </button>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ height: 0 }}
+            animate={{ height: 'auto' }}
+            exit={{ height: 0 }}
+            className={cn("px-6 pb-6", contentClassName)}
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 // --- Components ---
 
 const BhopalLogo = ({ size = 40, className = "" }: { size?: number, className?: string }) => (
@@ -853,6 +880,23 @@ const BookingForm = ({ onBookingComplete }: { onBookingComplete: (details: any) 
           {errors.drop && <p className="text-[10px] text-red-500 font-bold uppercase mt-1">{errors.drop}</p>}
         </div>
 
+        <div className="space-y-1">
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Map View</label>
+          <div className="rounded-3xl overflow-hidden border border-slate-200 h-48 relative">
+            <MapContainer 
+              center={[23.2599, 77.4126]} 
+              zoom={12} 
+              style={{ height: '100%', width: '100%' }}
+              zoomControl={false}
+            >
+              <TileLayer
+                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              />
+            </MapContainer>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Date</label>
@@ -1596,6 +1640,7 @@ const DriverDashboard = ({ bookings, onBack }: { bookings: any[], onBack: () => 
 
 const OperatorDashboard = ({ bookings, onBack }: { bookings: any[], onBack: () => void }) => {
   const [tab, setTab] = useState<'bookings' | 'chat' | 'applications'>('bookings');
+  const [actualKms, setActualKms] = useState<Record<string, string>>({});
   const [cancelBookingId, setCancelBookingId] = useState<string | null>(null);
   
   // Filter states
@@ -1825,6 +1870,7 @@ const OperatorDashboard = ({ bookings, onBack }: { bookings: any[], onBack: () =
                       <th className="px-8 py-4 font-bold text-slate-400 uppercase text-[10px] tracking-widest">Vehicle</th>
                       <th className="px-8 py-4 font-bold text-slate-400 uppercase text-[10px] tracking-widest">Status</th>
                       <th className="px-8 py-4 font-bold text-slate-400 uppercase text-[10px] tracking-widest">Est. Amount</th>
+                      <th className="px-8 py-4 font-bold text-slate-400 uppercase text-[10px] tracking-widest">Actual KM</th>
                       <th className="px-8 py-4 font-bold text-slate-400 uppercase text-[10px] tracking-widest">Actions</th>
                     </tr>
                   </thead>
@@ -1866,13 +1912,43 @@ const OperatorDashboard = ({ bookings, onBack }: { bookings: any[], onBack: () =
                           <p className="text-[10px] text-slate-400 font-medium italic">Excl. Toll/Tax</p>
                         </td>
                         <td className="px-8 py-6">
+                          {b.status !== 'Completed' ? (
+                            <input 
+                              type="number" 
+                              placeholder="Enter KM"
+                              value={actualKms[b.id] || ''}
+                              onChange={(e) => setActualKms(prev => ({ ...prev, [b.id]: e.target.value }))}
+                              className="w-20 px-2 py-1 border border-slate-200 rounded-md text-sm"
+                            />
+                          ) : (
+                            <p className="text-sm font-bold text-brand-dark">{b.actualKms || 'N/A'} km</p>
+                          )}
+                        </td>
+                        <td className="px-8 py-6">
                           {b.status !== 'Completed' && b.status !== 'Rejected' && b.status !== 'Cancelled' && (
-                            <button 
-                              onClick={() => setCancelBookingId(b.id)}
-                              className="text-red-500 font-bold text-xs hover:text-red-700"
-                            >
-                              Cancel
-                            </button>
+                            <div className="flex flex-col gap-2">
+                              <button 
+                                onClick={() => {
+                                  const kms = parseFloat(actualKms[b.id] || '0');
+                                  if (kms > 0) {
+                                    const rate = b.rate || 11; // Default rate
+                                    const total = kms * rate;
+                                    socket.emit('update_booking_status', { id: b.id, status: 'Completed', actualKms: kms, total: total });
+                                  } else {
+                                    alert('Please enter valid kilometers');
+                                  }
+                                }}
+                                className="bg-brand-orange text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-brand-dark transition-all"
+                              >
+                                Generate Bill
+                              </button>
+                              <button 
+                                onClick={() => setCancelBookingId(b.id)}
+                                className="text-red-500 font-bold text-xs hover:text-red-700"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -2276,268 +2352,267 @@ Estimated Total: ₹${details.total || 'TBD'}
         </div>
       </section>
 
-      {/* Services Section */}
-      <section className="py-24 bg-white" id="services">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-3xl mx-auto mb-16">
-            <h2 className="text-sm font-bold text-brand-orange uppercase tracking-widest mb-4">Our Services</h2>
-            <h3 className="text-4xl font-bold text-brand-dark">Premium Travel Solutions for Every Need</h3>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              {
-                title: "Airport Drops & Pickups",
-                desc: "Hassle-free pickups and drops to Bhopal, Indore, and Nagpur airports. Punctuality guaranteed for all your flights.",
-                icon: <Plane className="text-brand-orange" size={32} />,
-                bg: "bg-orange-50"
-              },
-              {
-                title: "All India Outstation",
-                desc: "Comfortable long-distance travel from Bhopal to any city in India. One-way or round-trip, we cover it all.",
-                icon: <MapPin className="text-blue-600" size={32} />,
-                bg: "bg-blue-50"
-              },
-              {
-                title: "Local Sightseeing",
-                desc: "Explore Bhopal's beauty with our local packages. Visit Upper Lake, Sanchi, and Bhimbetka with expert drivers.",
-                icon: <Car className="text-green-600" size={32} />,
-                bg: "bg-green-50"
-              }
-            ].map((service, idx) => (
-              <motion.div 
-                key={idx}
-                whileHover={{ y: -10 }}
-                className="p-8 rounded-3xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300"
-              >
-                <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center mb-6", service.bg)}>
-                  {service.icon}
-                </div>
-                <h4 className="text-xl font-bold mb-4">{service.title}</h4>
-                <p className="text-slate-600 leading-relaxed">{service.desc}</p>
-                <button className="mt-6 text-brand-orange font-bold flex items-center gap-2 group">
-                  Learn More <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                </button>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Fleet Section */}
-      <section className="py-24 bg-slate-50" id="fleet">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6">
-            <div className="max-w-2xl">
-              <h2 className="text-sm font-bold text-brand-orange uppercase tracking-widest mb-4">Our Fleet</h2>
-              <h3 className="text-4xl font-bold text-brand-dark">Choose the Perfect Ride for Your Journey</h3>
+      <CollapsibleSection title="Our Services & Fleet" className="mb-8">
+        <section className="py-12 bg-white" id="services">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-3xl mx-auto mb-16">
+              <h2 className="text-sm font-bold text-brand-orange uppercase tracking-widest mb-4">Our Services</h2>
+              <h3 className="text-4xl font-bold text-brand-dark">Premium Travel Solutions for Every Need</h3>
             </div>
-            <button className="bg-white border border-slate-200 px-6 py-3 rounded-xl font-bold hover:bg-slate-100 transition-colors">
-              View All Vehicles
-            </button>
-          </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
-            {fleet.map((car, idx) => (
-              <div key={idx} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100 group flex flex-col">
-                <div className="relative h-56 overflow-hidden">
-                  <img 
-                    src={car.img} 
-                    alt={car.name} 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="absolute top-4 left-4 flex flex-col gap-2">
-                    <div className="bg-brand-dark/80 backdrop-blur-md text-white px-3 py-1 rounded-lg text-xs font-bold uppercase">
-                      {car.type}
-                    </div>
-                    <div className={cn(
-                      "px-3 py-1 rounded-lg text-[10px] font-bold uppercase backdrop-blur-md",
-                      car.status === 'Available' ? "bg-green-500/80 text-white" : "bg-red-500/80 text-white"
-                    )}>
-                      {car.status}
-                    </div>
+            <div className="grid md:grid-cols-3 gap-8">
+              {[
+                {
+                  title: "Airport Drops & Pickups",
+                  desc: "Hassle-free pickups and drops to Bhopal, Indore, and Nagpur airports. Punctuality guaranteed for all your flights.",
+                  icon: <Plane className="text-brand-orange" size={32} />,
+                  bg: "bg-orange-50"
+                },
+                {
+                  title: "All India Outstation",
+                  desc: "Comfortable long-distance travel from Bhopal to any city in India. One-way or round-trip, we cover it all.",
+                  icon: <MapPin className="text-blue-600" size={32} />,
+                  bg: "bg-blue-50"
+                },
+                {
+                  title: "Local Sightseeing",
+                  desc: "Explore Bhopal's beauty with our local packages. Visit Upper Lake, Sanchi, and Bhimbetka with expert drivers.",
+                  icon: <Car className="text-green-600" size={32} />,
+                  bg: "bg-green-50"
+                }
+              ].map((service, idx) => (
+                <motion.div 
+                  key={idx}
+                  whileHover={{ y: -10 }}
+                  className="p-8 rounded-3xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300"
+                >
+                  <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center mb-6", service.bg)}>
+                    {service.icon}
                   </div>
-                </div>
-                <div className="p-6 flex-grow flex flex-col">
-                  <h4 className="text-xl font-bold mb-2">{car.name}</h4>
-                  <div className="flex items-center gap-4 text-slate-500 text-sm mb-6">
-                    <span className="flex items-center gap-1"><Car size={14} /> AC</span>
-                    <span className="flex items-center gap-1"><Star size={14} /> {car.capacity}</span>
-                  </div>
-                  
-                  <button 
-                    onClick={() => setSelectedCar(car)}
-                    className="w-full py-3 mb-6 border border-slate-100 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-50 hover:text-brand-orange transition-all flex items-center justify-center gap-2"
-                  >
-                    <Info size={16} /> View Details
+                  <h4 className="text-xl font-bold mb-4">{service.title}</h4>
+                  <p className="text-slate-600 leading-relaxed">{service.desc}</p>
+                  <button className="mt-6 text-brand-orange font-bold flex items-center gap-2 group">
+                    Learn More <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
                   </button>
-
-                  <div className="flex flex-col gap-1 pt-6 border-t border-slate-100 mt-auto">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">Outstation</p>
-                        <p className="text-lg font-bold text-brand-orange">{car.price}</p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase text-right">Local (8h/80km)</p>
-                        <p className="text-lg font-bold text-brand-dark text-right">{car.localPrice}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1 mt-2">
-                      <p className="text-[10px] text-slate-400 font-medium italic">* Toll/Parking Extra | Pickup-Drop (Min. 30km for &lt;10km)</p>
-                      <p className="text-[10px] text-slate-400 font-medium italic">* Outstation Drop: Return km charges apply</p>
-                      <button 
-                        onClick={() => {
-                          const bookingId = `TT-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-                          const message = `Hello Tathastu Travels, I want to book ${car.name}.\nBooking ID: ${bookingId}`;
-                          window.open(`https://wa.me/919754364899?text=${encodeURIComponent(message)}`, '_blank');
-                          setBookingConfirmation({ carName: car.name, id: bookingId });
-                        }}
-                        className="bg-brand-dark text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-brand-orange transition-colors mt-1"
-                      >
-                        Book Now
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Why Choose Us & Owner Profile */}
-      <section className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div className="relative">
-              <div className="aspect-square rounded-3xl overflow-hidden bg-slate-200 shadow-2xl">
-                {/* Using a high-quality placeholder that matches the user's uploaded portrait vibe */}
-                <img 
-                  src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=1000&h=1000" 
-                  alt="Owner / Professional Driver" 
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-              <div className="absolute -bottom-8 -right-8 bg-brand-orange text-white p-8 rounded-3xl shadow-2xl hidden md:block">
-                <p className="text-4xl font-bold mb-1">10+</p>
-                <p className="text-sm font-medium opacity-80">Years of Trust</p>
-              </div>
-            </div>
-
-            <div>
-              <h2 className="text-sm font-bold text-brand-orange uppercase tracking-widest mb-4">Meet Your Travel Partner</h2>
-              <h3 className="text-4xl font-bold text-brand-dark mb-8 leading-tight">All India Service Taxi Bhopal Se All India Ke Liye</h3>
-              
-              <div className="space-y-8">
-                {[
-                  {
-                    title: "Mostly Airport Transfers",
-                    desc: "We specialize in Raja Bhoj Airport (Bhopal) pickups and drops. Always on time, every time.",
-                    icon: <Plane className="text-brand-orange" />
-                  },
-                  {
-                    title: "All India Outstation",
-                    desc: "Planning a trip outside Bhopal? We provide comfortable cabs for all over India at the best rates.",
-                    icon: <MapPin className="text-blue-600" />
-                  },
-                  {
-                    title: "Professional & Safe",
-                    desc: "Experienced drivers, clean cars, and 24/7 support to ensure your journey is smooth and safe.",
-                    icon: <ShieldCheck className="text-green-600" />
-                  }
-                ].map((item, idx) => (
-                  <div key={idx} className="flex gap-6">
-                    <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center">
-                      {item.icon}
-                    </div>
-                    <div>
-                      <h4 className="text-lg font-bold mb-2">{item.title}</h4>
-                      <p className="text-slate-600 leading-relaxed">{item.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                </motion.div>
+              ))}
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Partner Section */}
-      <section className="py-24 bg-slate-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="bg-white rounded-[3rem] p-8 md:p-16 shadow-xl shadow-slate-200/50 border border-slate-100 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-brand-orange/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
-            
-            <div className="grid lg:grid-cols-2 gap-12 items-center relative z-10">
-              <div>
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 text-blue-600 text-sm font-bold mb-6">
-                  <Car size={16} /> Business Opportunity
-                </div>
-                <h2 className="text-4xl md:text-5xl font-bold text-brand-dark mb-6 leading-tight">
-                  अपनी कार हमारे साथ <span className="text-brand-orange">अटैच करें</span>
-                </h2>
-                <p className="text-xl text-slate-600 mb-8 leading-relaxed">
-                  क्या आपके पास अपनी कार है? तथास्तु ट्रेवल्स के साथ जुड़ें और अपनी कमाई बढ़ाएं। हम भोपाल और आस-पास के क्षेत्रों से गाड़ियां अटैच कर रहे हैं।
-                </p>
-                
-                <ul className="space-y-4 mb-8">
-                  {[
-                    "नियमित बुकिंग और अच्छी कमाई",
-                    "समय पर भुगतान की गारंटी",
-                    "पारदर्शी और ईमानदार सिस्टम",
-                    "24/7 सपोर्ट और सहायता"
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-center gap-3 text-slate-700 font-medium">
-                      <div className="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center flex-shrink-0">
-                        <ChevronRight size={14} strokeWidth={3} />
+        <section className="py-12 bg-slate-50" id="fleet">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6">
+              <div className="max-w-2xl">
+                <h2 className="text-sm font-bold text-brand-orange uppercase tracking-widest mb-4">Our Fleet</h2>
+                <h3 className="text-4xl font-bold text-brand-dark">Choose the Perfect Ride for Your Journey</h3>
+              </div>
+              <button className="bg-white border border-slate-200 px-6 py-3 rounded-xl font-bold hover:bg-slate-100 transition-colors">
+                View All Vehicles
+              </button>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-8">
+              {fleet.map((car, idx) => (
+                <div key={idx} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100 group flex flex-col">
+                  <div className="relative h-56 overflow-hidden">
+                    <img 
+                      src={car.img} 
+                      alt={car.name} 
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute top-4 left-4 flex flex-col gap-2">
+                      <div className="bg-brand-dark/80 backdrop-blur-md text-white px-3 py-1 rounded-lg text-xs font-bold uppercase">
+                        {car.type}
                       </div>
-                      {item}
-                    </li>
-                  ))}
-                </ul>
+                      <div className={cn(
+                        "px-3 py-1 rounded-lg text-[10px] font-bold uppercase backdrop-blur-md",
+                        car.status === 'Available' ? "bg-green-500/80 text-white" : "bg-red-500/80 text-white"
+                      )}>
+                        {car.status}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-6 flex-grow flex flex-col">
+                    <h4 className="text-xl font-bold mb-2">{car.name}</h4>
+                    <div className="flex items-center gap-4 text-slate-500 text-sm mb-6">
+                      <span className="flex items-center gap-1"><Car size={14} /> AC</span>
+                      <span className="flex items-center gap-1"><Star size={14} /> {car.capacity}</span>
+                    </div>
+                    
+                    <button 
+                      onClick={() => setSelectedCar(car)}
+                      className="w-full py-3 mb-6 border border-slate-100 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-50 hover:text-brand-orange transition-all flex items-center justify-center gap-2"
+                    >
+                      <Info size={16} /> View Details
+                    </button>
 
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-8 flex items-start gap-3">
-                  <ShieldCheck className="text-red-600 shrink-0 mt-0.5" size={20} />
-                  <div>
-                    <h4 className="text-red-800 font-bold mb-1">Strict Policy / सख्त नियम</h4>
-                    <p className="text-sm text-red-700 font-medium">
-                      बिना वैध दस्तावेजों (RC, Insurance, Permit, Fitness) के कोई भी गाड़ी अटैच नहीं की जाएगी।<br/>
-                      <span className="text-xs opacity-80">Vehicles will NOT be attached without complete and valid papers.</span>
-                    </p>
+                    <div className="flex flex-col gap-1 pt-6 border-t border-slate-100 mt-auto">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">Outstation</p>
+                          <p className="text-lg font-bold text-brand-orange">{car.price}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase text-right">Local (8h/80km)</p>
+                          <p className="text-lg font-bold text-brand-dark text-right">{car.localPrice}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 mt-2">
+                        <p className="text-[10px] text-slate-400 font-medium italic">* Toll/Parking Extra | Pickup-Drop (Min. 30km for &lt;10km)</p>
+                        <p className="text-[10px] text-slate-400 font-medium italic">* Outstation Drop: Return km charges apply</p>
+                        <button 
+                          onClick={() => {
+                            const bookingId = `TT-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+                            const message = `Hello Tathastu Travels, I want to book ${car.name}.\nBooking ID: ${bookingId}`;
+                            window.open(`https://wa.me/919754364899?text=${encodeURIComponent(message)}`, '_blank');
+                            setBookingConfirmation({ carName: car.name, id: bookingId });
+                          }}
+                          className="bg-brand-dark text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-brand-orange transition-colors mt-1"
+                        >
+                          Book Now
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </CollapsibleSection>
 
-                <div className="flex flex-wrap gap-4">
-                  <a 
-                    href="https://wa.me/919754364899?text=Hello, I want to attach my car with Tathastu Travels." 
-                    className="bg-brand-orange text-white px-8 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 hover:bg-orange-600 transition-all shadow-lg shadow-brand-orange/30"
-                  >
-                    <MessageCircle size={24} /> अभी संपर्क करें
-                  </a>
-                </div>
-              </div>
-
+      <CollapsibleSection title="Why Choose Us & Partner" className="mb-8">
+        <section className="py-12 bg-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid lg:grid-cols-2 gap-16 items-center">
               <div className="relative">
-                <div className="aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl">
+                <div className="aspect-square rounded-3xl overflow-hidden bg-slate-200 shadow-2xl">
                   <img 
-                    src="https://picsum.photos/seed/partnership/800/600" 
-                    alt="Partner with us" 
+                    src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=1000&h=1000" 
+                    alt="Owner / Professional Driver" 
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                 </div>
-                <div className="absolute -top-6 -left-6 bg-white p-6 rounded-3xl shadow-xl border border-slate-50 hidden md:block">
-                  <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Contact for Attachment</p>
-                  <p className="text-2xl font-bold text-brand-dark">97543 64899</p>
+                <div className="absolute -bottom-8 -right-8 bg-brand-orange text-white p-8 rounded-3xl shadow-2xl hidden md:block">
+                  <p className="text-4xl font-bold mb-1">10+</p>
+                  <p className="text-sm font-medium opacity-80">Years of Trust</p>
+                </div>
+              </div>
+
+              <div>
+                <h2 className="text-sm font-bold text-brand-orange uppercase tracking-widest mb-4">Meet Your Travel Partner</h2>
+                <h3 className="text-4xl font-bold text-brand-dark mb-8 leading-tight">All India Service Taxi Bhopal Se All India Ke Liye</h3>
+                
+                <div className="space-y-8">
+                  {[
+                    {
+                      title: "Mostly Airport Transfers",
+                      desc: "We specialize in Raja Bhoj Airport (Bhopal) pickups and drops. Always on time, every time.",
+                      icon: <Plane className="text-brand-orange" />
+                    },
+                    {
+                      title: "All India Outstation",
+                      desc: "Planning a trip outside Bhopal? We provide comfortable cabs for all over India at the best rates.",
+                      icon: <MapPin className="text-blue-600" />
+                    },
+                    {
+                      title: "Professional & Safe",
+                      desc: "Experienced drivers, clean cars, and 24/7 support to ensure your journey is smooth and safe.",
+                      icon: <ShieldCheck className="text-green-600" />
+                    }
+                  ].map((item, idx) => (
+                    <div key={idx} className="flex gap-6">
+                      <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center">
+                        {item.icon}
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-bold mb-2">{item.title}</h4>
+                        <p className="text-slate-600 leading-relaxed">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <section className="py-12 bg-slate-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="bg-white rounded-[3rem] p-8 md:p-16 shadow-xl shadow-slate-200/50 border border-slate-100 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-brand-orange/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+              
+              <div className="grid lg:grid-cols-2 gap-12 items-center relative z-10">
+                <div>
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 text-blue-600 text-sm font-bold mb-6">
+                    <Car size={16} /> Business Opportunity
+                  </div>
+                  <h2 className="text-4xl md:text-5xl font-bold text-brand-dark mb-6 leading-tight">
+                    अपनी कार हमारे साथ <span className="text-brand-orange">अटैच करें</span>
+                  </h2>
+                  <p className="text-xl text-slate-600 mb-8 leading-relaxed">
+                    क्या आपके पास अपनी कार है? तथास्तु ट्रेवल्स के साथ जुड़ें और अपनी कमाई बढ़ाएं। हम भोपाल और आस-पास के क्षेत्रों से गाड़ियां अटैच कर रहे हैं।
+                  </p>
+                  
+                  <ul className="space-y-4 mb-8">
+                    {[
+                      "नियमित बुकिंग और अच्छी कमाई",
+                      "समय पर भुगतान की गारंटी",
+                      "पारदर्शी और ईमानदार सिस्टम",
+                      "24/7 सपोर्ट और सहायता"
+                    ].map((item, i) => (
+                      <li key={i} className="flex items-center gap-3 text-slate-700 font-medium">
+                        <div className="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center flex-shrink-0">
+                          <ChevronRight size={14} strokeWidth={3} />
+                        </div>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-8 flex items-start gap-3">
+                    <ShieldCheck className="text-red-600 shrink-0 mt-0.5" size={20} />
+                    <div>
+                      <h4 className="text-red-800 font-bold mb-1">Strict Policy / सख्त नियम</h4>
+                      <p className="text-sm text-red-700 font-medium">
+                        बिना वैध दस्तावेजों (RC, Insurance, Permit, Fitness) के कोई भी गाड़ी अटैच नहीं की जाएगी।<br/>
+                        <span className="text-xs opacity-80">Vehicles will NOT be attached without complete and valid papers.</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-4">
+                    <a 
+                      href="https://wa.me/919754364899?text=Hello, I want to attach my car with Tathastu Travels." 
+                      className="bg-brand-orange text-white px-8 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 hover:bg-orange-600 transition-all shadow-lg shadow-brand-orange/30"
+                    >
+                      <MessageCircle size={24} /> अभी संपर्क करें
+                    </a>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <div className="aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl">
+                    <img 
+                      src="https://picsum.photos/seed/partnership/800/600" 
+                      alt="Partner with us" 
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                  <div className="absolute -top-6 -left-6 bg-white p-6 rounded-3xl shadow-xl border border-slate-50 hidden md:block">
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Contact for Attachment</p>
+                    <p className="text-2xl font-bold text-brand-dark">97543 64899</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </CollapsibleSection>
 
       {/* App Download Section */}
       <section className="py-24 bg-white overflow-hidden" id="download">
@@ -2617,8 +2692,9 @@ Estimated Total: ₹${details.total || 'TBD'}
         </div>
       </section>
 
+      <CollapsibleSection title="Testimonials, FAQ & Map" className="mb-8">
       {/* Testimonials Section */}
-      <section className="py-24 bg-slate-50" id="testimonials">
+      <section className="py-12 bg-slate-50" id="testimonials">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-sm font-bold text-brand-orange uppercase tracking-widest mb-4">Testimonials</h2>
@@ -2670,7 +2746,7 @@ Estimated Total: ₹${details.total || 'TBD'}
       </section>
 
       {/* FAQ Section */}
-      <section className="py-24 bg-white" id="faq">
+      <section className="py-12 bg-white" id="faq">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-sm font-bold text-brand-orange uppercase tracking-widest mb-4">FAQ</h2>
@@ -2707,7 +2783,7 @@ Estimated Total: ₹${details.total || 'TBD'}
       </section>
 
       {/* Map Section */}
-      <section className="py-24 bg-slate-50" id="map">
+      <section className="py-12 bg-slate-50" id="map">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-sm font-bold text-brand-orange uppercase tracking-widest mb-4">Find Us</h2>
@@ -2739,6 +2815,7 @@ Estimated Total: ₹${details.total || 'TBD'}
           </div>
         </div>
       </section>
+      </CollapsibleSection>
 
       {/* CTA Section */}
       <section className="py-20 bg-brand-dark text-white overflow-hidden relative" id="contact">
